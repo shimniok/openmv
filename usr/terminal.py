@@ -19,6 +19,8 @@ class SerialTerminal(QPlainTextEdit):
         self.reader.serial.connect(self.reader.set_serial)
         self.reader.data_ready.connect(self.handle_data)
         self.reader.error.connect(self.handle_error)
+        self.reader.moveToThread(self.thread)
+        self.thread.start(QThread.LowPriority)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.reader.poll_serial)
