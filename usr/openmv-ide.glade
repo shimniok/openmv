@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <!-- interface-requires gtk+ 3.0 -->
-  <!-- interface-requires gtksourceview 0.0 -->
-  <!-- interface-requires vte 0.0 -->
   <!-- interface-naming-policy toplevel-contextual -->
   <object class="GtkAdjustment" id="brightness_adjust">
     <property name="lower">-2</property>
@@ -787,21 +785,11 @@
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
                 <child>
-                  <object class="GtkScrolledWindow" id="scrolledwindow1">
+                  <object class="GtkScrolledWindow" id="src_scrolledwindow">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <child>
-                      <object class="GtkSourceView" id="gtksourceview">
-                        <property name="visible">True</property>
-                        <property name="can_focus">True</property>
-                        <property name="left_margin">2</property>
-                        <property name="right_margin">2</property>
-                        <property name="show_line_numbers">True</property>
-                        <property name="tab_width">4</property>
-                        <property name="auto_indent">True</property>
-                        <property name="insert_spaces_instead_of_tabs">True</property>
-                        <property name="highlight_current_line">True</property>
-                      </object>
+                      <placeholder/>
                     </child>
                   </object>
                   <packing>
@@ -1165,18 +1153,16 @@
               </packing>
             </child>
             <child>
-              <object class="GtkScrolledWindow" id="scrolledwindow2">
+              <object class="GtkScrolledWindow" id="vte_scrolledwindow">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
+                <signal name="size-allocate" handler="on_vte_size_allocate" swapped="no"/>
                 <child>
-                  <object class="VteTerminal" id="terminal">
+                  <object class="GtkTextView" id="vte_textview">
                     <property name="visible">True</property>
-                    <property name="app_paintable">True</property>
                     <property name="can_focus">True</property>
-                    <property name="background_tint_color">#ffff0fa0ffff</property>
-                    <property name="encoding">UTF-8</property>
-                    <property name="scroll_on_keystroke">True</property>
-                    <property name="scroll_on_output">False</property>
+                    <property name="editable">False</property>
+                    <property name="wrap_mode">word</property>
                   </object>
                 </child>
               </object>
