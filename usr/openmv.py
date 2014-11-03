@@ -10,6 +10,7 @@ import sys,time
 import usb.core
 import usb.util
 import pydfu
+import platform
 from array import array
 from PIL import Image
 
@@ -54,9 +55,11 @@ def init():
     if __dev is None:
         raise ValueError('__device not found')
 
-    # detach kernel driver
-    if __dev.is_kernel_driver_active(__INTERFACE):
-        __dev.detach_kernel_driver(__INTERFACE)
+    # Windows backend doesn't support this
+    if (platform.system() !='Windows'):
+        # detach kernel driver
+        if __dev.is_kernel_driver_active(__INTERFACE):
+            __dev.detach_kernel_driver(__INTERFACE)
 
     # claim __INTERFACE
     usb.util.claim_interface(__dev, __INTERFACE)
@@ -83,15 +86,15 @@ def fb_size():
     size = struct.unpack("III", buf)
     return size
 
-def fb_lock():
-    buf = __dev.ctrl_transfer(0xC1, __USBDBG_FRAME_LOCK, 0, __INTERFACE, 1, __TIMEOUT)
-    return struct.unpack("B", buf)[0]
+def fb_state():
+    buf = __dev.ctrl_transfer(0xC1, __USBDBG_FRAME_LOCK, 0, __INTERFACE, __FB_HDR_SIZE, __TIMEOUT)
+    return struct.unpack("III", buf)
 
 def fb_dump():
-    if (fb_lock() == 0):
+    size = fb_state()
+    if (not size[0]): # frame not ready
         return None
 
-    size = fb_size()
     if (size[2] > 2): #JPEG
         num_bytes = size[2]
     else:
@@ -110,8 +113,6 @@ def fb_dump():
         buff = ''.join(map(_rgb, arr))
     else: # JPEG
         try:
-            #print(size[0], size[1], size[2])
-            #__write_img(buff, "/tmp/swap.jpeg")
             buff = Image.frombuffer("RGB", (size[0], size[1]), buff, "jpeg", "RGB", "").tostring()
         except Exception as e:
             print ("JPEG decode error (%s)"%(e))
