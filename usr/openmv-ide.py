@@ -193,20 +193,20 @@ class OMVGtk:
 
     def connect(self):
         try:
-            # open VCP and configure the terminal
-            self.serial = serial.Serial(self.config.get("main", "serial_port"), 115200, timeout=0.001)
-            gobject.gobject.idle_add(omvgtk.update_terminal)
-        except Exception as e:
-            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV\n%s"%e)
-            return
-
-        try:
             # init openmv
             openmv.init()
 
             # interrupt any running code
             openmv.stop_script()
             sleep(0.1)
+        except Exception as e:
+            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV\n%s"%e)
+            return
+
+        try:
+            # open VCP and configure the terminal
+            self.serial = serial.Serial(self.config.get("main", "serial_port"), 115200, timeout=0.001)
+            gobject.gobject.idle_add(omvgtk.update_terminal)
         except Exception as e:
             self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV\n%s"%e)
             return
@@ -400,7 +400,10 @@ class OMVGtk:
     def update_terminal(self):
         if (self.serial.readable()):
             buffer = self.terminal.get_buffer()
-            buffer.insert(buffer.get_end_iter(), self.serial.readline())
+            try:
+                buffer.insert(buffer.get_end_iter(), self.serial.readline())
+            except:
+                return False
         return True
 
     def update_drawing(self):
@@ -413,7 +416,6 @@ class OMVGtk:
         except Exception as e:
             self.disconnect()
             self._update_title()
-            print("%s"%(e))
             return True
 
         if fb:
