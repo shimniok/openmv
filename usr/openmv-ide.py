@@ -7,6 +7,7 @@ import pango
 import serial
 import usb.core
 import usb.util
+import platform
 import sys, os, os.path
 from time import sleep
 from os.path import expanduser
@@ -20,11 +21,12 @@ except ImportError:
     # 2.x name
     configparser = __import__("ConfigParser")
 
-IDE_PATH     = os.path.dirname(os.path.realpath(__file__))
-GLADE_PATH   = IDE_PATH+"/openmv-ide.glade"
-CONFIG_PATH  = IDE_PATH+"/openmv.config"
-EXAMPLE_PATH = IDE_PATH+"/examples"
-SCRIPTS_PATH = IDE_PATH+"/scripts"
+IDE_DIR      = os.path.dirname(os.path.realpath(__file__))
+DATA_DIR     = os.path.join(os.path.expanduser("~"), "openmv") #use home dir
+SCRIPTS_DIR  = os.path.join(DATA_DIR, "scripts")
+EXAMPLES_DIR = os.path.join(IDE_DIR, "examples")
+GLADE_PATH   = os.path.join(IDE_DIR, "openmv-ide.glade")
+CONFIG_PATH  = os.path.join(DATA_DIR, "openmv.config")
 
 SCALE =1
 RECENT_FILES_LIMIT=5
@@ -34,7 +36,7 @@ FLASH_OFFSETS= [0x08000000, 0x08004000, 0x08008000, 0x0800C000,
 
 DEFAULT_CONFIG='''\
 [main]
-board = openmv1
+board = OpenMV-Tiny
 serial_port = /dev/openmvcam
 recent =
 '''
@@ -129,10 +131,19 @@ class OMVGtk:
             "on_zoomin_clicked"             : self.zoomin_clicked,
             "on_zoomout_clicked"            : self.zoomout_clicked,
             "on_bestfit_clicked"            : self.bestfit_clicked,
+            "on_preferences_clicked"        : self.preferences_clicked,
             "on_updatefb_clicked"           : self.updatefb_clicked,
             "on_vte_size_allocate"          : self.scroll_terminal,
         }
         self.builder.connect_signals(signals)
+
+        # create data directory
+        if not os.path.isdir(DATA_DIR):
+            os.makedirs(DATA_DIR)
+
+        # create user scripts directory
+        if not os.path.isdir(SCRIPTS_DIR):
+            os.makedirs(SCRIPTS_DIR)
 
         # create fresh config if needed
         if not os.path.isfile(CONFIG_PATH):
@@ -159,18 +170,17 @@ class OMVGtk:
 #            self._load_file(path)
 
         # built-in examples menu
-        if os.path.isdir(EXAMPLE_PATH):
-            submenu = gtk.Menu()
-            menu = self.builder.get_object('example_menu')
-            files = sorted(os.listdir(EXAMPLE_PATH))
-            for f in files:
-                if f.endswith(".py"):
-                    label = os.path.basename(f)
-                    mitem = gtk.MenuItem(label)
-                    mitem.connect("activate", self.open_example, EXAMPLE_PATH)
-                    submenu.append(mitem)
+        submenu = gtk.Menu()
+        menu = self.builder.get_object('example_menu')
+        files = sorted(os.listdir(EXAMPLES_DIR))
+        for f in files:
+            if f.endswith(".py"):
+                label = os.path.basename(f)
+                mitem = gtk.MenuItem(label)
+                mitem.connect("activate", self.open_example, EXAMPLES_DIR)
+                submenu.append(mitem)
 
-            menu.set_submenu(submenu)
+        menu.set_submenu(submenu)
 
         # recent files menu
         self.files = []
@@ -192,23 +202,27 @@ class OMVGtk:
         sleep(wait)
 
     def connect(self):
-        try:
+        init = False
+        for i in range(0, 5):
             # init openmv
-            openmv.init()
+            init = openmv.init()
+            if init:
+                break
+            sleep(0.200)
 
-            # interrupt any running code
-            openmv.stop_script()
-            sleep(0.1)
-        except Exception as e:
-            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV\n%s"%e)
+        if init == False:
+            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV")
             return
+
+        # interrupt any running code
+        openmv.stop_script()
 
         try:
             # open VCP and configure the terminal
             self.serial = serial.Serial(self.config.get("main", "serial_port"), 115200, timeout=0.001)
             gobject.gobject.idle_add(omvgtk.update_terminal)
         except Exception as e:
-            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to connect to OpenMV\n%s"%e)
+            self.show_message_dialog(gtk.MESSAGE_ERROR, "Failed to open serial port (check prefernces)\n%s"%e)
             return
 
         self.connected = True
@@ -243,7 +257,7 @@ class OMVGtk:
         dialog = gtk.FileChooserDialog(title=None,action=gtk.FILE_CHOOSER_ACTION_OPEN,
                 buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_OK))
         dialog.set_default_response(gtk.RESPONSE_OK)
-        dialog.set_current_folder(SCRIPTS_PATH)
+        dialog.set_current_folder(SCRIPTS_DIR)
         ff = gtk.FileFilter()
         ff.set_name("dfu")
         ff.add_pattern("*.bin") #TODO change to DFU
@@ -365,6 +379,28 @@ class OMVGtk:
         global SCALE
         SCALE=1
 
+    def preferences_clicked(self, widget):
+        board_combo = self.builder.get_object("board_combo")
+        sport_combo = self.builder.get_object("sport_combo")
+        dialog = self.builder.get_object("preferences_dialog")
+
+        # Fill serial ports combo
+        sport_combo.get_model().clear()
+        serial_ports = self.list_serial_ports()
+        for i in serial_ports:
+            sport_combo.append_text(i)
+
+        if len(serial_ports):
+            sport_combo.set_active(0)
+
+        # Save config
+        if dialog.run() == gtk.RESPONSE_OK:
+            self.config.set("main", "board", board_combo.get_active_text())
+            self.config.set("main", "serial_port", sport_combo.get_active_text())
+            self.save_config()
+
+        dialog.hide()
+
     def updatefb_clicked(self, widget):
         openmv.fb_update()
 
@@ -439,8 +475,7 @@ class OMVGtk:
         openmv.set_attr(adjust.attr, int(adjust.value))
 
     def save_config(self):
-        # TODO set config items from GUI
-        #self.config.set("section", "key", value)
+        # config.set("section", "key", value)
         self.config.set("main", "recent", ','.join(self.files))
         with open(CONFIG_PATH, "w") as file:
            self.config.write(file)
@@ -490,7 +525,7 @@ class OMVGtk:
             dialog = gtk.FileChooserDialog(title=None,action=gtk.FILE_CHOOSER_ACTION_SAVE,
                     buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_OK))
             dialog.set_default_response(gtk.RESPONSE_OK)
-            dialog.set_current_folder(SCRIPTS_PATH)
+            dialog.set_current_folder(SCRIPTS_DIR)
             ff = gtk.FileFilter()
             ff.set_name("python")
             ff.add_pattern("*.py")
@@ -562,7 +597,7 @@ class OMVGtk:
         dialog = gtk.FileChooserDialog(title=None,action=gtk.FILE_CHOOSER_ACTION_OPEN,
                 buttons=(gtk.STOCK_CANCEL, gtk.RESPONSE_CANCEL, gtk.STOCK_OPEN, gtk.RESPONSE_OK))
         dialog.set_default_response(gtk.RESPONSE_OK)
-        dialog.set_current_folder(SCRIPTS_PATH)
+        dialog.set_current_folder(SCRIPTS_DIR)
         ff = gtk.FileFilter()
         ff.set_name("python")
         ff.add_pattern("*.py")
@@ -580,9 +615,31 @@ class OMVGtk:
     def text_changed(self, widget):
         self.save_button.set_sensitive(True)
 
+    def list_serial_ports(self):
+        serial_ports = []
+        system_name = platform.system()
+
+        if system_name == "Windows":
+            for i in range(256):
+                try:
+                    port = "COM%d"%i
+                    s = serial.Serial(port)
+                    serial_ports.append(port)
+                    s.close()
+                except serial.SerialException:
+                    pass
+        else:
+            # Linux/Mac
+            serial_ports.append("/dev/openmvcam")
+
+        return serial_ports
+
     def quit(self, widget):
-        # disconnect
-        self.disconnect()
+        try:
+            # disconnect
+            self.disconnect()
+        except:
+            pass
 
         self.save_config()
 
